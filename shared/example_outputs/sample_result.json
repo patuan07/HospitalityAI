@@ -1,0 +1,44 @@
+{
+  "image_id": "example_abc123.jpg",
+  "stages_run": ["stage1", "stage2", "stage3", "stage4", "stage5"],
+  "stage1": {
+    "prob_made": 0.83,
+    "pred_made": true,
+    "debug": {
+      "edge_density": 0.04
+    }
+  },
+  "defects": {
+    "wrinkles": 0.61,
+    "stain": 0.10,
+    "pillow_misaligned": 0.22,
+    "blanket_off_center": 0.14
+  },
+  "localizations": [
+    {
+      "label": "wrinkles",
+      "confidence": 0.61,
+      "method": "cam_fallback",
+      "heatmap_path": "http://localhost:8000/artifacts/stage3_wrinkles_heatmap.png",
+      "overlay_path": "http://localhost:8000/artifacts/stage3_wrinkles_overlay.png",
+      "regions": null
+    }
+  ],
+  "alignment_score": 0.78,
+  "alignment_pass": true,
+  "alignment_debug": {
+    "dominant_angle_deg": -2.3,
+    "roi_px": [96, 120, 544, 608]
+  },
+  "stage5": {
+    "robustness_score": 0.86,
+    "details": {
+      "note": "example"
+    }
+  },
+  "artifacts": {
+    "stage4_rotated": "http://localhost:8000/artifacts/stage4_rotated.png",
+    "stage4_edges": "http://localhost:8000/artifacts/stage4_edges_rotated.png",
+    "stage4_roi_overlay": "http://localhost:8000/artifacts/stage4_roi_overlay.png"
+  }
+}
