@@ -3,7 +3,7 @@
 This repo is the **official starter template** for the competition's **Product / Packaging** stage.
 It is designed for a **mixed-skill** audience:
 
-- **Beginners**: run a working web demo (Streamlit) with zero frontend work.
+- **Beginners**: run a working web demo (Streamlit) with zero frontend changes.
 - **Advanced teams**: keep the FastAPI backend and replace ML internals with your trained models.
 
 ## What you get
@@ -24,6 +24,15 @@ The product stage requirement is satisfied when your UI **visibly consumes ML ou
 
 ### 1) Start backend
 
+Make sure you are into the workspace and simply run the bash scripts
+
+```bash
+cd hospitality-ai-product-template_final
+bash scripts/run_backend.sh 
+```
+
+or do the following manually
+
 ```bash
 cd backend
 python -m venv .venv
@@ -37,6 +46,15 @@ Open health check:
 - `GET http://localhost:8000/health`
 
 ### 2) Start Streamlit UI
+
+Simply run the bash scripts
+
+```bash
+cd hospitality-ai-product-template_final
+bash scripts/run_webapp.sh 
+```
+
+or run the following codes manually
 
 ```bash
 cd webapp_streamlit
@@ -76,7 +94,6 @@ Edit or replace these files:
 - `backend/ml/stage4_geometry.py` (Stage 4)
 - `backend/ml/stage5_robustness.py` (Stage 5, optional)
 
-Or keep the baselines and focus on the product UX.
 
 The orchestration is done in:
 
@@ -95,7 +112,7 @@ If your team uses torch / Grad-CAM:
 
 ---
 
-## Docker (optional)
+## Docker (optional - This is not necessary and will not give you any advantage in the competition)
 
 Advanced teams can run:
 
