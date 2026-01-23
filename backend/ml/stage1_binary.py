@@ -1,22 +1,10 @@
-"""Stage 1: Binary classification baseline.
-
-Task example: "Is the bed made?" -> {0,1}
-
-This template intentionally works without torch. The default implementation
-is a lightweight heuristic (edge density) to keep the product template
-fully runnable.
-
-Teams should replace `predict_stage1()` with their trained model inference.
-"""
-
-from __future__ import annotations
-
+import os
+import torch
+import torch.nn as nn
+from torchvision import models, transforms
+from PIL import Image
 from dataclasses import dataclass
-from typing import Dict, Tuple, Optional
-
-import cv2
-import numpy as np
-
+from typing import Dict
 
 @dataclass
 class Stage1Result:
@@ -24,54 +12,67 @@ class Stage1Result:
     pred_made: bool
     debug: Dict
 
+# Use the absolute path to ensure the file is found during the hackathon
+MODEL_PATH = "/home/maxwell-guico/RobotRoarz/ai_competition_housekeeping_product_template/backend/ml/models/classifier.pth"
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def _read_bgr(image_path: str) -> np.ndarray:
-    img = cv2.imread(image_path)
-    if img is None:
-        raise ValueError(f"Failed to read image: {image_path}")
-    return img
+def load_model_and_labels():
+    """Loads weights and extracts label mapping from the checkpoint."""
+    if os.path.exists(MODEL_PATH):
+        try:
+            checkpoint = torch.load(MODEL_PATH, map_location=DEVICE)
+            
+            # 1. Map labels
+            class_to_idx = checkpoint["class_to_idx"]
+            idx_to_class = {v: k for k, v in class_to_idx.items()}
+            
+            # 2. Initialize ResNet18
+            model = models.resnet18(weights=None)
+            model.fc = nn.Linear(model.fc.in_features, len(class_to_idx))
+            
+            # 3. Load weights from 'model_state'
+            model.load_state_dict(checkpoint["model_state"])
+            model.eval()
+            return model, idx_to_class
+        except Exception as e:
+            print(f"❌ Error loading Stage 1: {e}")
+    return None, {0: "Made", 1: "Unmade"}
 
+# Global instances
+MODEL, IDX_TO_CLASS = load_model_and_labels()
 
-def predict_stage1(
-    image_path: str,
-    *,
-    input_width: int = 640,
-    edge_threshold: float = 0.085,
-) -> Stage1Result:
-    """Return probability that the bed is made.
+def predict_stage1(image_path: str, *, input_width: int = 224) -> Stage1Result:
+    if not os.path.exists(image_path) or MODEL is None:
+        return Stage1Result(prob_made=0.0, pred_made=False, debug={"error": "Model/Image missing"})
 
-    Baseline heuristic idea:
-    - A made bed tends to have cleaner, larger contiguous surfaces
-    - An unmade bed tends to have more edges (wrinkles, clutter)
-
-    We approximate this with an edge-density score.
-    """
-
-    img = _read_bgr(image_path)
-
-    # Resize preserving aspect ratio
-    h, w = img.shape[:2]
-    if w != input_width:
-        scale = input_width / float(w)
-        img = cv2.resize(img, (input_width, int(round(h * scale))), interpolation=cv2.INTER_AREA)
-
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (5, 5), 0)
-    edges = cv2.Canny(gray, 50, 150)
-
-    edge_density = float(np.mean(edges > 0))  # 0..1
-
-    # Heuristic: lower edge density => more likely "made"
-    # Map density to probability with a simple clamp.
-    prob_made = float(np.clip((edge_threshold - edge_density) / edge_threshold, 0.0, 1.0))
-    pred_made = prob_made >= 0.5
+    # MIRROR YOUR SCRIPT'S TRANSFORMS
+    # Note: No normalization is used here to match your provided script exactly.
+    transform = transforms.Compose([
+        transforms.Resize((input_width, input_width)),
+        transforms.ToTensor()
+    ])
+    
+    img = Image.open(image_path).convert("RGB")
+    x = transform(img).unsqueeze(0).to(DEVICE)
+    
+    with torch.no_grad():
+        outputs = MODEL(x)
+        probs = torch.softmax(outputs, dim=1)
+        
+        # Determine which index is 'Made' based on your idx_to_class
+        # This prevents 'flipped' results between different computers
+        made_idx = next((i for i, label in IDX_TO_CLASS.items() if label.lower() == "made"), 0)
+        prob_made = float(probs[0, made_idx].item())
+        
+        pred_idx = probs.argmax(dim=1).item()
+        top_label = IDX_TO_CLASS[pred_idx]
 
     return Stage1Result(
         prob_made=prob_made,
-        pred_made=pred_made,
+        pred_made=(top_label.lower() == "made"),
         debug={
-            "edge_density": edge_density,
-            "edge_threshold": edge_threshold,
-            "note": "heuristic baseline; replace with your trained Stage-1 model",
-        },
+            "top_label": top_label,
+            "confidence": float(probs[0, pred_idx].item()),
+            "idx_to_class": IDX_TO_CLASS
+        }
     )
