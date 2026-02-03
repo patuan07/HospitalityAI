@@ -1,0 +1,288 @@
+import cv2
+import numpy as np
+import os
+from pathlib import Path
+from typing import List, Tuple, Callable
+from tqdm import tqdm
+
+# AUGMENTATION FUNCTIONS
+def increase_brightness(img, value=25):
+    """Simulate bright lighting"""
+    return cv2.convertScaleAbs(img, alpha=1.0, beta=value)
+
+def decrease_brightness(img, value=25):
+    """Simulate dim lighting"""
+    return cv2.convertScaleAbs(img, alpha=1.0, beta=-value)
+
+def warm_temperature(img, intensity=30):
+    """Simulate warm color temperature"""
+    img_warm = img.copy().astype(np.float32)
+    img_warm[:, :, 2] += intensity  # Red
+    img_warm[:, :, 1] += intensity * 0.5  # Green
+    return np.clip(img_warm, 0, 255).astype(np.uint8)
+
+def cool_temperature(img, intensity=30):
+    """Simulate cool color temperature"""
+    img_cool = img.copy().astype(np.float32)
+    img_cool[:, :, 0] += intensity  # Blue
+    return np.clip(img_cool, 0, 255).astype(np.uint8)
+
+def apply_gaussian_blur(img, kernel_size=7):
+    """Simulate out-of-focus"""
+    return cv2.GaussianBlur(img, (kernel_size, kernel_size), 0)
+
+def apply_motion_blur(img, size=15, angle=45):
+    """Simulate camera shake"""
+    kernel = np.zeros((size, size))
+    kernel[int((size-1)/2), :] = np.ones(size)
+    kernel = kernel / size
+    M = cv2.getRotationMatrix2D((size/2, size/2), angle, 1)
+    kernel = cv2.warpAffine(kernel, M, (size, size))
+    return cv2.filter2D(img, -1, kernel)
+
+def rotate_image(img, angle):
+    """Simulate unusual camera angles"""
+    h, w = img.shape[:2]
+    center = (w // 2, h // 2)
+    M = cv2.getRotationMatrix2D(center, angle, 1.0)
+    return cv2.warpAffine(img, M, (w, h), borderValue=(0, 0, 0))
+
+def apply_jpeg_compression(img, quality=30):
+    """Simulate low bandwidth/compression"""
+    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
+    _, encimg = cv2.imencode('.jpg', img, encode_param)
+    return cv2.imdecode(encimg, 1)
+
+def add_gaussian_noise(img, mean=0, sigma=15):
+    """Simulate sensor noise"""
+    gaussian = np.random.normal(mean, sigma, img.shape).astype(np.float32)
+    noisy = np.clip(img.astype(np.float32) + gaussian, 0, 255)
+    return noisy.astype(np.uint8)
+
+def apply_perspective_transform(img, strength=0.15):
+    """Simulate non-standard viewing positions"""
+    h, w = img.shape[:2]
+    pts1 = np.float32([[0, 0], [w, 0], [0, h], [w, h]])
+    
+    offset = int(min(w, h) * strength)
+    pts2 = np.float32([
+        [np.random.randint(0, offset), np.random.randint(0, offset)],
+        [w - np.random.randint(0, offset), np.random.randint(0, offset)],
+        [np.random.randint(0, offset), h - np.random.randint(0, offset)],
+        [w - np.random.randint(0, offset), h - np.random.randint(0, offset)]
+    ])
+    
+    M = cv2.getPerspectiveTransform(pts1, pts2)
+    return cv2.warpPerspective(img, M, (w, h), borderValue=(0, 0, 0))
+
+def add_occlusion(img, num_occlusions=2, max_size_ratio=0.2):
+    """Simulate partial occlusion"""
+    img_occluded = img.copy()
+    h, w = img.shape[:2]
+    
+    for _ in range(num_occlusions):
+        occlusion_w = np.random.randint(int(w * 0.05), int(w * max_size_ratio))
+        occlusion_h = np.random.randint(int(h * 0.05), int(h * max_size_ratio))
+        x = np.random.randint(0, w - occlusion_w)
+        y = np.random.randint(0, h - occlusion_h)
+        
+        color = tuple(np.random.randint(0, 255, 3).tolist())
+        cv2.rectangle(img_occluded, (x, y), 
+                     (x + occlusion_w, y + occlusion_h), color, -1)
+    
+    return img_occluded
+
+def get_augmentation_pipeline(mode='train'):
+    """
+    Define augmentation strategies based on dataset split
+    
+    Args:
+        mode: 'train', 'val', or 'test'
+    
+    Returns:
+        List of (name, function) tuples
+    """
+    if mode == 'train':
+        # Heavy augmentation for training
+        return [
+            ('bright_plus', lambda img: increase_brightness(img, 30)),
+            ('bright_minus', lambda img: decrease_brightness(img, 30)),
+            ('warm', lambda img: warm_temperature(img, 35)),
+            ('cool', lambda img: cool_temperature(img, 35)),
+            ('blur_light', lambda img: apply_gaussian_blur(img, 5)),
+            ('blur_heavy', lambda img: apply_gaussian_blur(img, 11)),
+            ('motion_blur', lambda img: apply_motion_blur(img, 15, 45)),
+            ('rotate_pos', lambda img: rotate_image(img, 5)),
+            ('rotate_neg', lambda img: rotate_image(img, -5)),
+            ('jpeg_low', lambda img: apply_jpeg_compression(img, 20)),
+            ('jpeg_med', lambda img: apply_jpeg_compression(img, 50)),
+            ('noise', lambda img: add_gaussian_noise(img, 0, 20)),
+            ('perspective', lambda img: apply_perspective_transform(img, 0.15)),
+            ('occlusion', lambda img: add_occlusion(img, 2, 0.2)),
+        ]
+    elif mode == 'val':
+        # Light augmentation for validation
+        return [
+            ('bright_plus', lambda img: increase_brightness(img, 25)),
+            ('bright_minus', lambda img: decrease_brightness(img, 25)),
+            ('blur', lambda img: apply_gaussian_blur(img, 7)),
+            ('rotate', lambda img: rotate_image(img, 3)),
+            ('jpeg', lambda img: apply_jpeg_compression(img, 40)),
+            ('noise', lambda img: add_gaussian_noise(img, 0, 12)),
+        ]
+    else:  # test
+        # Minimal or no augmentation for test (keep original for baseline)
+        # Optionally return empty list to keep test set clean
+        return []
+        # Or use light augmentation to test robustness:
+        # return [
+        #     ('bright_minus', lambda img: decrease_brightness(img, 20)),
+        #     ('blur', lambda img: apply_gaussian_blur(img, 5)),
+        # ]
+
+# MAIN AUGMENTATION FUNCTION
+def augment_dataset(
+    dataset_root: str,
+    output_root: str = None,
+    augment_train: bool = True,
+    augment_val: bool = True,
+    augment_test: bool = False,
+    start_counter: int = 10000
+):
+    """
+    Augment entire dataset while preserving folder structure
+    
+    Args:
+        dataset_root: Path to dataset folder containing train/val/test
+        output_root: If None, augments in-place. If provided, creates new structure
+        augment_train: Whether to augment training set
+        augment_val: Whether to augment validation set
+        augment_test: Whether to augment test set
+        start_counter: Starting number for file naming (to avoid conflicts)
+    """
+    dataset_root = Path(dataset_root)
+    
+    # Use same directory if output not specified
+    if output_root is None:
+        output_root = dataset_root
+    else:
+        output_root = Path(output_root)
+    
+    splits = {
+        'train': augment_train,
+        'val': augment_val,
+        'test': augment_test
+    }
+    
+    stats = {
+        'total_original': 0,
+        'total_augmented': 0,
+        'by_split': {}
+    }
+    
+    for split_name, should_augment in splits.items():
+        if not should_augment:
+            print(f"Skipping {split_name} set (augmentation disabled)")
+            continue
+        
+        split_path = dataset_root / split_name
+        if not split_path.exists():
+            print(f"Warning: {split_path} does not exist, skipping...")
+            continue
+        
+        # Get augmentation pipeline for this split
+        aug_pipeline = get_augmentation_pipeline(split_name)
+        
+        if not aug_pipeline:
+            print(f"No augmentations defined for {split_name}, skipping...")
+            continue
+        
+        print(f"\n{'='*60}")
+        print(f"Processing {split_name.upper()} set")
+        print(f"Augmentations: {len(aug_pipeline)}")
+        print(f"{'='*60}")
+        
+        split_stats = {'original': 0, 'augmented': 0}
+        counter = start_counter
+        
+        # Iterate through class folders (Made/Unmade)
+        for class_folder in sorted(split_path.iterdir()):
+            if not class_folder.is_dir():
+                continue
+            
+            class_name = class_folder.name
+            print(f"\nProcessing class: {class_name}")
+            
+            # Create output directory
+            output_class_path = output_root / split_name / class_name
+            output_class_path.mkdir(parents=True, exist_ok=True)
+            
+            # Get all image files
+            image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff'}
+            image_files = [
+                f for f in class_folder.iterdir()
+                if f.suffix.lower() in image_extensions
+            ]
+            
+            split_stats['original'] += len(image_files)
+            
+            # Process each image
+            for img_path in tqdm(image_files, desc=f"  {class_name}"):
+                # Read image
+                img = cv2.imread(str(img_path))
+                if img is None:
+                    print(f"Warning: Could not read {img_path}, skipping...")
+                    continue
+                
+                # Copy original if output directory is different
+                if output_root != dataset_root:
+                    original_name = f"img_{counter:06d}_original{img_path.suffix}"
+                    cv2.imwrite(str(output_class_path / original_name), img)
+                    counter += 1
+                
+                # Apply each augmentation
+                for aug_name, aug_func in aug_pipeline:
+                    try:
+                        augmented = aug_func(img)
+                        
+                        # Save with descriptive name
+                        aug_filename = f"img_{counter:06d}_aug_{aug_name}{img_path.suffix}"
+                        output_path = output_class_path / aug_filename
+                        
+                        cv2.imwrite(str(output_path), augmented)
+                        counter += 1
+                        split_stats['augmented'] += 1
+                        
+                    except Exception as e:
+                        print(f"Error applying {aug_name} to {img_path}: {e}")
+        
+        stats['by_split'][split_name] = split_stats
+        stats['total_original'] += split_stats['original']
+        stats['total_augmented'] += split_stats['augmented']
+    
+    # Print summary
+    print(f"\n{'='*60}")
+    print("AUGMENTATION SUMMARY")
+    print(f"{'='*60}")
+    print(f"Total original images: {stats['total_original']}")
+    print(f"Total augmented images: {stats['total_augmented']}")
+    print(f"Augmentation ratio: {stats['total_augmented']/stats['total_original']:.2f}x")
+    
+    for split_name, split_stats in stats['by_split'].items():
+        print(f"\n{split_name.upper()}:")
+        print(f"  Original: {split_stats['original']}")
+        print(f"  Augmented: {split_stats['augmented']}")
+        if split_stats['original'] > 0:
+            ratio = split_stats['augmented'] / split_stats['original']
+            print(f"  Ratio: {ratio:.2f}x")
+
+
+if __name__ == "__main__":
+    #Augment only training data
+    print("Example 1: Augment training data only")
+    augment_dataset(
+        dataset_root="dataset",
+        augment_train=True,
+        augment_val=False,
+        augment_test=False
+    )
