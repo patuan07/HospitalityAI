@@ -1,24 +1,4 @@
-# Hospitality AI Product Template (Official Reference Repo)
-
-This repo is the **official starter template** for the competition's **Product / Packaging** stage.
-It is designed for a **mixed-skill** audience:
-
-- **Beginners**: run a working web demo (Streamlit) with zero frontend changes.
-- **Advanced teams**: keep the FastAPI backend and replace ML internals with your trained models.
-
-## What you get
-
-- **FastAPI backend** (`backend/`) exposing `POST /analyze`
-- **Streamlit web app** (`webapp_streamlit/`) that consumes the API and displays:
-  - Stage 1: binary classification
-  - Stage 2: multi-label defects
-  - Stage 3: localization overlays/heatmaps
-  - Stage 4: geometry alignment artifacts
-  - Stage 5 (optional): robustness consistency score
-
-The product stage requirement is satisfied when your UI **visibly consumes ML outputs** (scores + overlays).
-
----
+# Hospitality AI Project RoboRoarZ 2026
 
 ## Quickstart (local)
 
@@ -27,7 +7,9 @@ The product stage requirement is satisfied when your UI **visibly consumes ML ou
 Make sure you are into the workspace and simply run the bash scripts
 
 ```bash
-cd hospitality-ai-product-template_final
+mkdir hospitality-ai
+git clone https://github.com/patuan07/HospitalityAI.git
+cd HospitalityAI
 bash scripts/run_backend.sh 
 ```
 
